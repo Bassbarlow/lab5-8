@@ -158,16 +158,75 @@ class Positioning:
 
         return agent.world.changePos(x, y)
 
-    def distanceTo(self, source: Agent, target: Agent):
-        world = source.world
-
-    def ToroidalDistance(self, source_cord, target_cord, worldSize):
-        dCord = source_cord - target_cord
+    def toroidalDistance(self, source_cord, target_cord, worldSize):
+        dCord = target_cord - source_cord
         if abs(dCord) > worldSize / 2:
-            dcordAbs = worldSize - (abs(dCord) + 1)
+            dcordAbs = worldSize - abs(dCord)
             return dcordAbs if dCord < 0 else -dcordAbs
         else:
             return dCord
+
+    def distanceTo(self, source: Agent, target: Agent):
+        world = source.world
+        dx = self.toroidalDistance(source.pos_x, target.pos_x, world.max_x - world.min_x + 1)
+        dy = self.toroidalDistance(source.pos_y, target.pos_y, world.max_y - world.min_y + 1)
+        return dx, dy
+
+
+class AgentVisionArea:
+    def __init__(self, agent: Agent):
+        self.agent = agent
+        self.positioning = Positioning()
+
+    def isOnFront(self, target: Agent) -> bool:
+        """Проверка нахождения target перед self.agent"""
+        dx, dy = self.positioning.distanceTo(self.agent, target)
+        return -2 <= dx <= 2 and dy == 2
+
+    def isOnLeft(self, target: Agent) -> bool:
+        """Проверка нахождения target слева от self.agent"""
+        dx, dy = self.positioning.distanceTo(self.agent, target)
+        return 0 <= dy <= 1 and dx == -2
+
+    def isOnRight(self, target: Agent) -> bool:
+        """Проверка нахождения target справа от self.agent"""
+        dx, dy = self.positioning.distanceTo(self.agent, target)
+        return 0 <= dy <= 1 and dx == 2
+
+
+    def isNear(self, target: Agent) -> bool:
+        """Проверка нахождения target в близости self.agent"""
+        dx, dy = self.positioning.distanceTo(self.agent, target)
+        return 0 <= dy <= 1 and -1 <= dx <= 1
+
+    def whereIs(self, target: Agent):
+        if self.isOnFront(target):
+            return target.agent_type + "Front"
+        elif self.isOnLeft(target):
+            return target.agent_type + "Left"
+        elif self.isOnRight(target):
+            return target.agent_type + "Right"
+        elif self.isNear(target):
+            return target.agent_type + "Near"
+        else:
+            return None
+
+    def getInputData(self):
+        inputData = []
+        for unit in self.agent.world.units:
+            if unit == self.agent:
+                continue
+            inputType = self.whereIs(unit)
+
+            if inputType is not None:
+                for signal in surroundings.keys():
+                    if surroundings[signal] == inputType:
+                        inputData[signal] += 1
+                        break
+                    else:
+                        continue
+
+        return inputData
 
 if __name__ == '__main__':
     print("start")
