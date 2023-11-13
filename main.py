@@ -10,6 +10,8 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushBut
 
 import numpy as np
 from matplotlib import pyplot
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
+from matplotlib.figure import Figure
 
 SIDES = {0: "Front", 1: "Right", 2: "Left", 3: "Near"}
 TYPES = {0: "Carnivore", 1: "Herbivore", 2: "Herb"}
@@ -27,9 +29,12 @@ for t in TYPES.values():
 
 print(surroundings)
 
+
 class Neuron:
 
     def __init__(self, num_inputs):
+        self.changeRange = 0.7
+        self.changeProb = 0.3
         self.weights = np.random.uniform(-1, 1, num_inputs)
         self.output = 0
 
@@ -37,17 +42,22 @@ class Neuron:
         self.output = np.sum(inputs * self.weights)
         return self.output
 
-    def calc_error(self, expexted_output):
-        return expexted_output - self.output
+    def update_weights(self):
+        for i in len(self.weights):
+            if random.uniform(0.0, 1.0) <= self.changeProb:
+                self.weights[i] += random.uniform(0.0, 1.0) * self.changeRange * 2 - self.changeRange
 
-    def update_weights(self, learning_rate, error, inputs):
-        self.weights += learning_rate * error * inputs
+class AgentPos:
+    def __init__(self,x,y,t,hp):
+        self.x=x,
+        self.y=y,
+        self.type=t,
+        self.hp=hp
 
 
 class World:
     def __init__(self, min_x, min_y, max_x, max_y):
         self.herbsOnTick = 5
-        self.startAgentCount = 10
         self.min_x = min_x
         self.min_y = min_y
         self.max_x = max_x
@@ -61,14 +71,13 @@ class World:
             if agent.isReadyToBreed():
                 self.units.append(agent.breed())
 
-        self.units=list(filter(lambda unit: unit.isDead()==False, self.units))
+        self.units = list(filter(lambda unit: unit.isDead() == False, self.units))
 
         for _ in range(self.herbsOnTick):
-            x, y = random.randint(self.min_x,self.max_x), random.randint(self.min_y, self.min_x)
-            herb = self.createAgent(TYPES[2],x,y)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
+            herb = self.createAgent(TYPES[2], x, y)
             self.units.append(herb)
 
-        self.units.de
     def changePos(self, x, y):
         new_x = x
         new_y = y
@@ -98,24 +107,32 @@ class World:
         return new_agent
 
     def initAgents(self):
-        herbsCount= 10
-        carnivoreCount= 1
-        herbivoreCount= 4
+        herbsCount = 10
+        carnivoreCount = 1
+        herbivoreCount = 4
 
         for _ in range(carnivoreCount):
-            x, y = random.randint(self.min_x,self.max_x), random.randint(self.min_y, self.min_x)
-            new_agent = self.createAgent(TYPES[0],x,y)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
+            new_agent = self.createAgent(TYPES[0], x, y)
             self.units.append(new_agent)
 
         for _ in range(herbivoreCount):
-            x, y = random.randint(self.min_x,self.max_x), random.randint(self.min_y, self.min_x)
-            self.createAgent(TYPES[1],x,y)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
+            self.createAgent(TYPES[1], x, y)
             self.units.append(new_agent)
 
         for _ in range(herbsCount):
-            x, y = random.randint(self.min_x,self.max_x), random.randint(self.min_y, self.min_x)
-            self.createAgent(TYPES[2],x,y)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
+            self.createAgent(TYPES[2], x, y)
             self.units.append(new_agent)
+
+    def getAgentsPos(self) ->List[AgentPos]:
+        result=[]
+        for agent in self.units:
+            agentPos=AgentPos(agent.pos_x,agent.pos_y,agent.agent_type,agent.health)
+            result.append(agentPos)
+        return result
+
 
 
 class Food:
@@ -197,7 +214,7 @@ class Agent:
         return newAgent
 
     def eat(self):
-        nearAgents = self.visionZone.getNearAgents()
+        nearAgents = self.visionZone.lookAround()
         for agent in nearAgents:
             for food in self.ration:
                 if food.type == agent.agent_type:
@@ -205,7 +222,9 @@ class Agent:
                     agent.kill()
                     return
 
-    def doSomething(self, inputs):
+    def doSomething(self):
+        inputs = self.visionZone.getInputData()
+
         if len(inputs) != self.neuron_size:
             print("Error, incorrect input size")
 
@@ -324,7 +343,8 @@ class AgentVisionArea:
         else:
             return None
 
-    def getNearAgents(self):
+    def lookAround(self):
+        """Возвращает список агентов, находящихся в области Near"""
         agentsNear = []
         agents = self.agent.world.units
 
@@ -346,6 +366,51 @@ class AgentVisionArea:
                             break
 
         return inputData
+
+
+class MlpCanvas(FigureCanvasQTAgg):
+    def __init__(self, parent=None, width=5, height=4, dpi=150):
+        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        super(MlpCanvas, self).__init__(self.fig)
+
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.world = World(0,0,30,30)
+
+        self.setWindowTitle("Игра в эволюцию")
+        self.setGeometry(100,100,800,600)
+
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+
+        self.layout = QGridLayout(self.central_widget)
+
+        self.plot = MlpCanvas(self, width=5, height=4, dpi=150)
+        main_plot = self.plot.fig.add_subplot(111)
+        plot,=main_plot.plot()
+        self.layout.addWidget(self.plot,0,0)
+
+        self.start_game_button = QPushButton("Начать")
+        self.start_game_button.clicked.connect(self.start_game)
+        self.layout.addWidget(self.start_game_button,0,1)
+
+        self.restart_button = QPushButton("Перезапустить")
+        self.restart_button.clicked.connect(self.restart)
+        self.layout.addWidget(self.restart_button,1,1)
+
+    def refresh_plot(self, dots):
+        self.plot = MlpCanvas(self, width=5, height=4, dpi=150)
+        main_plot = self.plot.fig.add_subplot(111)
+        plot, = main_plot.plot(dots[:, 0], dots[:, 1], 'o')
+        self.layout.addWidget(self.plot, 2, 0)
+    def start_game(self):
+        self.world.initAgents()
+        dots=self.world.getAgentsPos()
+        self.refresh_plot(dots)
+
 
 
 if __name__ == '__main__':
