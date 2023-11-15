@@ -15,6 +15,10 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
+#TODO: Доделать логику на дизайне
+#TODO: Добавить паузу?
+#TODO: Написать план защиты этой огромной лабы
+
 SIDES = {0: "Front", 1: "Right", 2: "Left", 3: "Near"}
 TYPES = {0: "Carnivore", 1: "Herbivore", 2: "Herb"}
 #   surroundings = {
