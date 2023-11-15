@@ -1,11 +1,8 @@
-import math
 import random
-import sys, os, threading
+import sys
 import time
 from typing import List
 
-from PyQt5 import QtCore
-from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushButton, QGridLayout, QListWidget, \
     QListWidgetItem, QMessageBox, QMainWindow, QComboBox
 
@@ -14,9 +11,6 @@ import numpy as np
 from svgpath2mpl import parse_path
 from svgpathtools import svg2paths
 import matplotlib as mpl
-from matplotlib.path import Path
-from matplotlib.textpath import TextToPath
-from matplotlib.font_manager import FontProperties
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
