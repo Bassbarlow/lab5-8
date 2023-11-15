@@ -38,14 +38,6 @@ for t in TYPES.values():
 # print(surroundings)
 
 
-
-def get_marker(symbol):
-    v, codes = TextToPath().get_text_path(fp, symbol)
-    v = np.array(v)
-    mean = np.mean([np.max(v, axis=0), np.min(v, axis=0)], axis=0)
-    return Path(v - mean, codes, closed=True)
-
-
 class Neuron:
 
     def __init__(self, num_inputs):
