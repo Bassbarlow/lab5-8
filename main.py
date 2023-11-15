@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
-#TODO: Доделать логику на дизайне
-#TODO: Добавить паузу?
-#TODO: Написать план защиты этой огромной лабы
+# TODO: Доделать логику на дизайне
+# TODO: Добавить паузу?
+# TODO: Написать план защиты этой огромной лабы
 
 SIDES = {0: "Front", 1: "Right", 2: "Left", 3: "Near"}
 TYPES = {0: "Carnivore", 1: "Herbivore", 2: "Herb"}
@@ -32,6 +32,7 @@ for t in TYPES.values():
     for side in SIDES.values():
         surroundings[loopcount] = t + side
         loopcount += 1
+
 
 # print(surroundings)
 
@@ -428,7 +429,7 @@ class MainWindow(QMainWindow):
             mark = mark.transformed(mpl.transforms.Affine2D().rotate_deg(180))
             mark = mark.transformed(mpl.transforms.Affine2D().scale(-1, 1))
 
-            main_plot.scatter(x, y, marker=mark, c=dots[type]['color'], s = 20, edgecolors=None, linewidths=2)
+            main_plot.scatter(x, y, marker=mark, c=dots[type]['color'], s=20, edgecolors=None, linewidths=2)
             self.plot.fig.canvas.draw()
             self.plot.fig.canvas.flush_events()
         self.layout.addWidget(self.plot, 0, 0)
