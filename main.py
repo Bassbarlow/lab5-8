@@ -1,6 +1,7 @@
 import math
 import random
-import sys, os
+import sys, os, threading
+import time
 from typing import List
 
 from PyQt5 import QtCore
@@ -9,7 +10,14 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QPushBut
     QListWidgetItem, QMessageBox, QMainWindow, QComboBox
 
 import numpy as np
-from matplotlib import pyplot
+
+from svgpath2mpl import parse_path
+from svgpathtools import svg2paths
+import matplotlib as mpl
+from matplotlib.path import Path
+from matplotlib.textpath import TextToPath
+from matplotlib.font_manager import FontProperties
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
@@ -27,7 +35,15 @@ for t in TYPES.values():
         surroundings[loopcount] = t + side
         loopcount += 1
 
-print(surroundings)
+# print(surroundings)
+
+
+
+def get_marker(symbol):
+    v, codes = TextToPath().get_text_path(fp, symbol)
+    v = np.array(v)
+    mean = np.mean([np.max(v, axis=0), np.min(v, axis=0)], axis=0)
+    return Path(v - mean, codes, closed=True)
 
 
 class Neuron:
@@ -43,21 +59,22 @@ class Neuron:
         return self.output
 
     def update_weights(self):
-        for i in len(self.weights):
+        for i in range(len(self.weights)):
             if random.uniform(0.0, 1.0) <= self.changeProb:
                 self.weights[i] += random.uniform(0.0, 1.0) * self.changeRange * 2 - self.changeRange
 
+
 class AgentPos:
-    def __init__(self,x,y,t,hp):
-        self.x=x,
-        self.y=y,
-        self.type=t,
-        self.hp=hp
+    def __init__(self, x, y, t):
+        self.x = x
+        self.y = y
+        self.type = t
 
 
 class World:
     def __init__(self, min_x, min_y, max_x, max_y):
         self.herbsOnTick = 5
+        self.onTick = False
         self.min_x = min_x
         self.min_y = min_y
         self.max_x = max_x
@@ -65,6 +82,7 @@ class World:
         self.units: List[Agent] = []
 
     def tick(self):
+        self.onTick = True
         for agent in self.units:
             agent.doSomething()
             agent.starve()
@@ -74,9 +92,10 @@ class World:
         self.units = list(filter(lambda unit: unit.isDead() == False, self.units))
 
         for _ in range(self.herbsOnTick):
-            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.max_y)
             herb = self.createAgent(TYPES[2], x, y)
             self.units.append(herb)
+        self.onTick = False
 
     def changePos(self, x, y):
         new_x = x
@@ -107,32 +126,31 @@ class World:
         return new_agent
 
     def initAgents(self):
-        herbsCount = 10
-        carnivoreCount = 1
-        herbivoreCount = 4
+        herbsCount = 15
+        carnivoreCount = 50
+        herbivoreCount = 50
 
         for _ in range(carnivoreCount):
-            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.max_y)
             new_agent = self.createAgent(TYPES[0], x, y)
             self.units.append(new_agent)
 
         for _ in range(herbivoreCount):
-            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
-            self.createAgent(TYPES[1], x, y)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.max_y)
+            new_agent = self.createAgent(TYPES[1], x, y)
             self.units.append(new_agent)
 
         for _ in range(herbsCount):
-            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.min_x)
-            self.createAgent(TYPES[2], x, y)
+            x, y = random.randint(self.min_x, self.max_x), random.randint(self.min_y, self.max_y)
+            new_agent = self.createAgent(TYPES[2], x, y)
             self.units.append(new_agent)
 
-    def getAgentsPos(self) ->List[AgentPos]:
-        result=[]
+    def getAgentsPos(self) -> List[AgentPos]:
+        result = []
         for agent in self.units:
-            agentPos=AgentPos(agent.pos_x,agent.pos_y,agent.agent_type,agent.health)
+            agentPos = AgentPos(agent.pos_x, agent.pos_y, agent.agent_type)
             result.append(agentPos)
         return result
-
 
 
 class Food:
@@ -143,11 +161,12 @@ class Food:
 
 class Agent:
 
-    def __init__(self, pos_x, pos_y, world: World, agent_type, movable: bool, breedable: bool, ration: list, health=1):
+    def __init__(self, pos_x, pos_y, world: World, agent_type, movable: bool, breedable: bool, thinkable: bool,
+                 ration: list, health=100):
 
-        self.health_breed = 10
-        self.starvingDamage = 10
+        self.starvingDamage = 5
         self.max_health = 100
+        self.health_breed = self.max_health * 0.5
         self.neuron_count = 4
         self.neuron_size = 12
         self.world = world
@@ -164,10 +183,10 @@ class Agent:
         self.health = health
         self.agent_type = TYPES[agent_type]
         self.neurons = [Neuron(self.neuron_size) for _ in range(self.neuron_count)]
-
-        self.visionZone = AgentVisionArea()
+        self.visionZone = AgentVisionArea(self)
         self.movable = movable
         self.breedable = breedable
+        self.thinkable = thinkable
         self.ration = ration
 
     def turn_left(self):
@@ -185,6 +204,8 @@ class Agent:
     def move(self):
         positioner = Positioning()
         pos = positioner.moveAgent(agent=self)
+        self.pos_x = pos[0]
+        self.pos_y = pos[1]
 
     def addHp(self, hp):
         if self.health + hp > self.max_health:
@@ -209,7 +230,7 @@ class Agent:
         newAgent = self.world.createAgent(self.agent_type, self.pos_x, self.pos_y)
         newAgent.health = self.health / 2
         for neuron in newAgent.neurons:
-            neuron.mutate()
+            neuron.update_weights()
 
         return newAgent
 
@@ -223,51 +244,52 @@ class Agent:
                     return
 
     def doSomething(self):
-        inputs = self.visionZone.getInputData()
+        if (self.thinkable):
+            inputs = self.visionZone.getInputData()
 
-        if len(inputs) != self.neuron_size:
-            print("Error, incorrect input size")
+            if len(inputs) != self.neuron_size:
+                print("Error, incorrect input size")
 
-        maxOutput = -9999999.0
-        action = 0
+            maxOutput = -9999999.0
+            action = 0
 
-        # noinspection PyTypeChecker
-        for i in len(self.neurons):
-            output = self.neurons[i].calc_output(inputs)
-            if output > maxOutput:
-                maxOutput = output
-                action = i
+            # noinspection PyTypeChecker
+            for i in range(len(self.neurons)):
+                output = self.neurons[i].calc_output(inputs)
+                if output > maxOutput:
+                    maxOutput = output
+                    action = i
 
-        # actions:
-        # 0: "TurnLeft",
-        # 1: "TurnRight",
-        # 2: "Move",
-        # 3: "Eat"
-        if action == 0:
-            self.turn_left()
-        elif action == 1:
-            self.turn_right()
-        elif action == 2:
-            self.move()
-        elif action == 3:
-            self.eat()
+            # actions:
+            # 0: "TurnLeft",
+            # 1: "TurnRight",
+            # 2: "Move",
+            # 3: "Eat"
+            if action == 0:
+                self.turn_left()
+            elif action == 1:
+                self.turn_right()
+            elif action == 2:
+                self.move()
+            elif action == 3:
+                self.eat()
 
 
 class Carnivore(Agent):
     def __init__(self, pos_x, pos_y, world):
-        food = Food("Herbivore", 10)
-        super().__init__(pos_x, pos_y, world, "Carnivore", True, True, [food])
+        food = Food("Herbivore", 20)
+        super().__init__(pos_x, pos_y, world, 0, True, True, True, [food])
 
 
 class Herbivore(Agent):
     def __init__(self, pos_x, pos_y, world):
-        food = Food("Herb", 10)
-        super().__init__(pos_x, pos_y, world, "Herbivore", True, True, [food])
+        food = Food("Herb", 15)
+        super().__init__(pos_x, pos_y, world, 1, True, True, True, [food])
 
 
 class Herb(Agent):
     def __init__(self, pos_x, pos_y, world):
-        super().__init__(pos_x, pos_y, world, "Herb", False, False, [])
+        super().__init__(pos_x, pos_y, world, 2, False, False, False, [])
 
 
 class Positioning:
@@ -355,7 +377,7 @@ class AgentVisionArea:
         return agentsNear
 
     def getInputData(self):
-        inputData = []
+        inputData = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         for unit in self.agent.world.units:
             if unit != self.agent:
                 inputType = self.whereIs(unit)
@@ -378,10 +400,10 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.world = World(0,0,30,30)
+        self.world = World(0, 0, 30, 30)
 
         self.setWindowTitle("Игра в эволюцию")
-        self.setGeometry(100,100,800,600)
+        self.setGeometry(200, 200, 800, 800)
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -390,28 +412,99 @@ class MainWindow(QMainWindow):
 
         self.plot = MlpCanvas(self, width=5, height=4, dpi=150)
         main_plot = self.plot.fig.add_subplot(111)
-        plot,=main_plot.plot()
-        self.layout.addWidget(self.plot,0,0)
+        plot, = main_plot.plot([0, 30], [0, 30], ' ')
+        self.layout.addWidget(self.plot, 0, 0)
 
         self.start_game_button = QPushButton("Начать")
         self.start_game_button.clicked.connect(self.start_game)
-        self.layout.addWidget(self.start_game_button,0,1)
+        self.layout.addWidget(self.start_game_button, 0, 1)
 
         self.restart_button = QPushButton("Перезапустить")
         self.restart_button.clicked.connect(self.restart)
-        self.layout.addWidget(self.restart_button,1,1)
+        self.layout.addWidget(self.restart_button, 1, 1)
 
     def refresh_plot(self, dots):
         self.plot = MlpCanvas(self, width=5, height=4, dpi=150)
         main_plot = self.plot.fig.add_subplot(111)
-        plot, = main_plot.plot(dots[:, 0], dots[:, 1], 'o')
-        self.layout.addWidget(self.plot, 2, 0)
-    def start_game(self):
-        self.world.initAgents()
-        dots=self.world.getAgentsPos()
-        self.refresh_plot(dots)
+        plot, = main_plot.plot([0, 30], [0, 30], ' ')
+        for type in dots:
+            x = dots[type]['x']
+            y = dots[type]['y']
 
+            path, attributes = svg2paths(dots[type]['marker'])
+            mark = parse_path(attributes[0]['d'])
+
+            mark.vertices -= mark.vertices.mean(axis=0)
+            mark = mark.transformed(mpl.transforms.Affine2D().rotate_deg(180))
+            mark = mark.transformed(mpl.transforms.Affine2D().scale(-1, 1))
+
+            main_plot.scatter(x, y, marker=mark, c=dots[type]['color'], s = 20, edgecolors=None, linewidths=2)
+            self.plot.fig.canvas.draw()
+            self.plot.fig.canvas.flush_events()
+        self.layout.addWidget(self.plot, 0, 0)
+
+    def getPosDict(self):
+        pos = {
+            'Herbs': {
+                'x': [],
+                'y': [],
+                'marker': 'seedling.svg',
+                'color': 'green',
+            },
+            'Carnivores': {
+                'x': [],
+                'y': [],
+                'marker': 'skull.svg',
+                'color': 'red',
+            },
+            'Herbivores': {
+                'x': [],
+                'y': [],
+                'marker': 'horse.svg',
+                'color': 'purple',
+            },
+        }
+        agentsPos = self.world.getAgentsPos()
+        for p in agentsPos:
+            if p.type == TYPES[2]:
+                pos["Herbs"]['x'].append(p.x)
+                pos["Herbs"]['y'].append(p.y)
+            elif p.type == TYPES[1]:
+                pos["Herbivores"]["x"].append(p.x)
+                pos["Herbivores"]["y"].append(p.y)
+            elif p.type == TYPES[0]:
+                pos["Carnivores"]["x"].append(p.x)
+                pos["Carnivores"]["y"].append(p.y)
+
+        return pos
+
+    def update_world(self, c):
+        self.world.tick()
+        positions = self.getPosDict()
+        self.refresh_plot(positions)
+        self.update()
+
+    def start_game(self):
+        print("start")
+        self.world.initAgents()
+        positions = self.getPosDict()
+        self.refresh_plot(positions)
+        c = 0
+        while True:
+            c += 1
+            self.update_world(c)
+            time.sleep(0.4)
+        print("end")
+
+    def restart(self):
+        self.world.units = []
+        self.refresh_plot([])
 
 
 if __name__ == '__main__':
-    print("start")
+    plt.ion()
+
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
